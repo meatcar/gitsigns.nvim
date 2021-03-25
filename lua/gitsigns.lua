@@ -45,6 +45,8 @@ local sign_map = {
    changedelete = "GitSignsChangeDelete",
 }
 
+local M
+
 local config
 
 local path_sep = (function()
@@ -595,6 +597,56 @@ local function setup_signs(redefine)
    end
 end
 
+local function add_debug_functions()
+   M.dump_cache = function()
+      print(vim.inspect(cache))
+   end
+
+   M.debug_messages = function()
+      for _, m in ipairs(gsd.messages) do
+         print(m)
+      end
+      return gsd.messages
+   end
+
+   M.clear_debug = function()
+      gsd.messages = {}
+   end
+end
+
+
+function gitsigns_complete(arglead, line)
+   local excludes = { 'run_func' }
+
+   local n = #vim.split(line, '%s+')
+
+   local matches = {}
+   if n == 2 then
+      for func, _ in pairs(M) do
+         if vim.tbl_contains(excludes, func) then
+
+         elseif vim.startswith(func, arglead) then
+            table.insert(matches, func)
+         end
+      end
+   end
+   return matches
+end
+
+local function run_func(func, ...)
+   M[func](...)
+end
+
+local function setup_command()
+   vim.cmd(table.concat({
+      'command!',
+      '-nargs=+',
+      '-complete=customlist,v:lua.gitsigns_complete',
+      'Gitsigns',
+      'lua require("gitsigns").run_func(<f-args>)',
+   }, ' '))
+end
+
 local function setup(cfg)
    config = process_config(cfg)
 
@@ -602,10 +654,14 @@ local function setup(cfg)
 
    gsd.debug_mode = config.debug_mode
 
+   if config.debug_mode then
+      add_debug_functions()
+   end
+
    Status.formatter = config.status_formatter
 
    setup_signs()
-
+   setup_command()
    apply_keymaps(false)
 
    update_debounced = debounce_trailing(config.update_debounce, arun(update))
@@ -711,13 +767,29 @@ local function refresh()
    end
 end
 
-return {
+local function toggle_signs()
+   config.signcolumn = not config.signcolumn
+   refresh()
+end
+
+local function toggle_numhl()
+   config.numhl = not config.numhl
+   refresh()
+end
+
+local function toggle_linehl()
+   config.linehl = not config.linehl
+   refresh()
+end
+
+M = {
    update = update_debounced,
    stage_hunk = mk_repeatable(stage_hunk),
    undo_stage_hunk = mk_repeatable(undo_stage_hunk),
    reset_hunk = mk_repeatable(reset_hunk),
    next_hunk = next_hunk,
    prev_hunk = prev_hunk,
+   select_hunk = select_hunk,
    preview_hunk = preview_hunk,
    blame_line = blame_line,
    reset_buffer = reset_buffer,
@@ -725,38 +797,11 @@ return {
    detach = detach,
    detach_all = detach_all,
    setup = setup,
-   select_hunk = select_hunk,
-
-
-   dump_cache = function()
-      print(vim.inspect(cache))
-   end,
-
-   debug_messages = function()
-      for _, m in ipairs(gsd.messages) do
-         print(m)
-      end
-      return gsd.messages
-   end,
-
-   clear_debug = function()
-      gsd.messages = {}
-   end,
-
    refresh = refresh,
-
-   toggle_signs = function()
-      config.signcolumn = not config.signcolumn
-      refresh()
-   end,
-
-   toggle_numhl = function()
-      config.numhl = not config.numhl
-      refresh()
-   end,
-
-   toggle_linehl = function()
-      config.linehl = not config.linehl
-      refresh()
-   end,
+   toggle_signs = toggle_signs,
+   toggle_linehl = toggle_linehl,
+   toggle_numhl = toggle_numhl,
+   run_func = run_func,
 }
+
+return M
